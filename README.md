@@ -7,10 +7,30 @@ Wordle's retention engine bolted onto a Flappy-Bird-style core loop.
 - **Daily mode:** every player on Earth gets the identical seeded run each day,
   3 attempts, shareable emoji result card, streaks. _(Phase 5+)_
 
-## Status: Phase 0 — Project scaffold & engine core ✅
+## Status: Phase 1 — Three graybox prototypes ✅
 
-The shared engine every prototype will build on. **No gameplay yet** — a
-hello-world scene (menu → game → results) exercises the engine end to end.
+Three one-touch mechanics built on the shared engine for the Phase 2 fun-gate
+bake-off. Rectangles and circles only — no art, no juice, no menus.
+
+| Route      | Mechanic   | One-touch control                                                        |
+| ---------- | ---------- | ------------------------------------------------------------------------ |
+| `/proto/a` | **CHARGE** | Hold to charge, release to launch — hold length sets launch power. Thread scrolling gaps. |
+| `/proto/b` | **ORBIT**  | Orbit an anchor; tap to release along the tangent and coast to the next anchor. Auto-scroll = forward pressure. |
+| `/proto/c` | **FLIP**   | Tap flips gravity; the comet falls to the opposite surface. Obstacles on floor and ceiling. |
+
+Shared prototype harness (`src/proto/shared/`): seeded reset, difficulty ramp
+(speed up + gap tighten), scoring (distance + pickups + near-miss bonus),
+near-miss detection, instant tap-to-restart, per-run telemetry to
+console + localStorage, and the HUD. Each mechanic owns only its world,
+physics, collision and graybox render. Tunable constants live in one
+`config.ts` per prototype.
+
+Add `?seed=NAME` to any prototype URL for a fixed, replayable obstacle layout.
+
+### Phase 0 — Engine core ✅
+
+The shared engine every prototype builds on. A hello-world scene at `/`
+(menu → game → results) exercises the engine end to end.
 
 ### What's in the engine (`src/engine/`)
 
@@ -47,12 +67,20 @@ npm run lint
 npm run build        # tsc --noEmit && vite build → dist/
 ```
 
-### Phase 0 tests
+### Tests
 
-- **RNG determinism** — automated: `npm test` (`src/engine/rng.test.ts`).
-- **60fps hold / input latency <50ms** — runtime: open the app, press `` ` ``
+- **RNG + obstacle determinism** — automated: `npm test`
+  (`src/engine/rng.test.ts`, `src/proto/proto.test.ts`). Same seed ⇒ identical
+  obstacle layout for all three prototypes.
+- **Prototype stability** — 20 consecutive death→restart runs per prototype,
+  crash-free, verified headlessly (see `scripts/`-style harness in the Phase 1
+  report). Restart is synchronous on tap (≪800ms pillar).
+- **60fps hold / input latency <50ms** — runtime: open any scene, press `` ` ``
   for the debug overlay. Latency turns red if it exceeds 50ms. Verify under
   Chrome DevTools 4× CPU throttle.
+- **Median run length + deaths/min** — captured per run in
+  `localStorage['comet:telemetry:<id>']` and logged to console; meaningful
+  numbers come from the Phase 2 human playtest, not bots.
 
 ## Deploy (free tier)
 
@@ -75,6 +103,6 @@ git push comet claude/comet-arcade-game-0yfh4q:main
 
 ## Build roadmap
 
-Phase 0 scaffold ✅ → 1 graybox prototypes (CHARGE/ORBIT/FLIP) → **2 fun gate
-(hard stop, human playtest)** → 3 core loop → 4 juice → 5 daily → 6 share →
-7 leaderboard → 8 meta → 9 PWA → 10 analytics & soft launch.
+Phase 0 scaffold ✅ → 1 graybox prototypes (CHARGE/ORBIT/FLIP) ✅ → **2 fun gate
+(hard stop, human playtest)** ← _next_ → 3 core loop → 4 juice → 5 daily →
+6 share → 7 leaderboard → 8 meta → 9 PWA → 10 analytics & soft launch.

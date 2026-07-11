@@ -31,6 +31,9 @@ export default [
         PointerEvent: 'readonly',
         KeyboardEvent: 'readonly',
         matchMedia: 'readonly',
+        location: 'readonly',
+        URLSearchParams: 'readonly',
+        Math: 'readonly',
       },
     },
     plugins: {
