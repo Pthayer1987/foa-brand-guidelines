@@ -1,7 +1,7 @@
 import type { AppContext } from '../../engine/types';
 import type { Rng } from '../../engine/rng';
 import { PALETTE } from '../../ui/palette';
-import type { Mechanic, RampState, StepResult } from '../shared/mechanic';
+import type { CometView, Mechanic, RampState, StepResult } from '../shared/mechanic';
 import { clamp } from '../shared/math';
 import { ORBIT, ORBIT_CONFIG } from './config';
 
@@ -131,23 +131,29 @@ export class OrbitMechanic implements Mechanic {
   }
 
   render(alpha: number, ctx: AppContext): void {
-    const { ctx: c, width: w, height: h } = ctx;
-    c.fillStyle = PALETTE.bg;
-    c.fillRect(0, 0, w, h);
+    const { ctx: c, width: w } = ctx;
 
     // anchors + capture rings
     for (const a of this.anchors) {
       const sx = a.worldX - this.cameraX;
       if (sx < -40 || sx > w + 40) continue;
-      c.strokeStyle = 'rgba(123,131,166,0.35)';
+      c.save();
+      c.strokeStyle = a.used ? 'rgba(123,131,166,0.22)' : 'rgba(77,225,193,0.4)';
+      c.setLineDash([4, 6]);
       c.lineWidth = 1;
       c.beginPath();
       c.arc(sx, a.y, a.radius, 0, Math.PI * 2);
       c.stroke();
+      c.restore();
+
+      c.save();
+      c.shadowColor = a.used ? PALETTE.dim : PALETTE.fg;
+      c.shadowBlur = a.used ? 6 : 16;
       c.fillStyle = a.used ? PALETTE.dim : PALETTE.fg;
       c.beginPath();
       c.arc(sx, a.y, ORBIT.anchorR, 0, Math.PI * 2);
       c.fill();
+      c.restore();
     }
 
     // tether while orbiting
@@ -155,19 +161,30 @@ export class OrbitMechanic implements Mechanic {
     const drawY = this.prevY + (this.wy - this.prevY) * alpha;
     if (this.orbiting && this.current) {
       const ax = this.current.worldX - this.cameraX;
-      c.strokeStyle = 'rgba(77,225,193,0.5)';
+      c.save();
+      c.strokeStyle = 'rgba(77,225,193,0.7)';
+      c.shadowColor = PALETTE.accent;
+      c.shadowBlur = 8;
       c.lineWidth = 2;
       c.beginPath();
       c.moveTo(ax, this.current.y);
       c.lineTo(drawX, drawY);
       c.stroke();
+      c.restore();
     }
+  }
 
-    // comet
-    c.fillStyle = PALETTE.accent;
-    c.beginPath();
-    c.arc(drawX, drawY, ORBIT.cometR, 0, Math.PI * 2);
-    c.fill();
+  cometView(_ctx: AppContext, alpha: number): CometView {
+    const drawX = this.prevScreenX + (this.wx - this.cameraX - this.prevScreenX) * alpha;
+    const drawY = this.prevY + (this.wy - this.prevY) * alpha;
+    let angle = 0;
+    let stretch = 1;
+    if (!this.orbiting) {
+      const spd = Math.hypot(this.vx, this.vy);
+      angle = Math.atan2(this.vy, this.vx);
+      stretch = clamp(1 + spd / 900, 1, 1.5);
+    }
+    return { x: drawX, y: drawY, stretch, angle };
   }
 
   private syncOrbitPos(): void {

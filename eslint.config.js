@@ -34,6 +34,8 @@ export default [
         location: 'readonly',
         URLSearchParams: 'readonly',
         Math: 'readonly',
+        AudioContext: 'readonly',
+        OscillatorType: 'readonly',
       },
     },
     plugins: {

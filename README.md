@@ -27,6 +27,23 @@ physics, collision and graybox render. Tunable constants live in one
 
 Add `?seed=NAME` to any prototype URL for a fixed, replayable obstacle layout.
 
+### Visual + juice layer
+
+A real feel/juice pass sits on top of the graybox mechanics (a preview of the
+Phase 4 work, kept mechanic-agnostic in the shared layer):
+
+- **Juice system** (`src/juice/juice.ts`) — particles, screen shake, hitstop,
+  a WebAudio synth (tap / pickup / near-miss / death / new-best, with pitch
+  variance), and a full-screen flash. Honours `prefers-reduced-motion`
+  (motion off, game fully playable) and a persisted **mute** toggle (`M`).
+- **Backdrop** (`src/ui/backdrop.ts`) — deep-space gradient, parallax
+  starfield, drifting nebula, vignette.
+- **Comet** (`src/ui/comet.ts`) — glowing body with a fading motion trail and
+  squash/stretch toward travel direction; obstacles/pickups glow
+  (`src/ui/shapes.ts`).
+- Near misses flash + chime + combo-pitch escalation; deaths burst + shake +
+  hitstop; new bests fanfare. All wired once in the shared harness.
+
 ### Phase 0 — Engine core ✅
 
 The shared engine every prototype builds on. A hello-world scene at `/`

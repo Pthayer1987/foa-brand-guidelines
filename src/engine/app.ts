@@ -2,7 +2,7 @@ import { GameLoop } from './loop';
 import { Input } from './input';
 import { SceneManager } from './scene';
 import { DebugOverlay } from './debug';
-import { createJuice } from '../juice/juice';
+import { JuiceSystem } from '../juice/juice';
 import type { AppContext, Scene } from './types';
 
 export interface AppOptions {
@@ -27,6 +27,7 @@ export class App {
   readonly scenes = new SceneManager();
   readonly loop: GameLoop;
   readonly debug: DebugOverlay;
+  readonly juice: JuiceSystem;
 
   private dpr = 1;
   private readonly context: AppContext;
@@ -37,6 +38,7 @@ export class App {
     this.ctx2d = ctx;
 
     this.input = new Input(opts.canvas);
+    this.juice = new JuiceSystem();
     for (const scene of opts.scenes) this.scenes.register(scene);
 
     this.context = {
@@ -45,18 +47,26 @@ export class App {
       width: 0,
       height: 0,
       input: this.input,
-      juice: createJuice(),
+      juice: this.juice,
       scenes: this.scenes,
     };
 
     this.loop = new GameLoop({
-      update: (dt) => this.scenes.update(dt, this.context),
+      update: (dt) => {
+        this.juice.update(dt);
+        // Hitstop: freeze scene logic for a beat while juice keeps animating.
+        if (!this.juice.frozen) this.scenes.update(dt, this.context);
+      },
       render: (alpha) => this.render(alpha),
     });
 
     this.debug = new DebugOverlay(this.loop, this.input, this.scenes, opts.debugInfo);
 
     window.addEventListener('resize', this.resize);
+    // Mute toggle (persisted).
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyM') this.juice.toggleMute();
+    });
     this.resize();
     this.scenes.switchTo(opts.start);
   }
@@ -88,7 +98,15 @@ export class App {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, c.width, c.height);
 
+    // Screen shake offsets the whole scene + particles, but not the flash.
+    const shake = this.juice.shakeOffset();
+    ctx.save();
+    ctx.translate(shake.x, shake.y);
     this.scenes.render(alpha, c);
+    this.juice.renderParticles(ctx);
+    ctx.restore();
+
+    this.juice.renderOverlays(ctx, c.width, c.height);
 
     // Latency is the event→render gap; sample after the scene has drawn.
     this.input.sampleLatency();

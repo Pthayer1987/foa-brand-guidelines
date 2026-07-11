@@ -49,10 +49,21 @@ export interface StepResult {
 
 export const NO_STEP: StepResult = { advanced: 0, pickups: 0, nearMisses: 0, dead: false };
 
+/** Interpolated on-screen comet position + optional squash/stretch. */
+export interface CometView {
+  x: number;
+  y: number;
+  /** 1 = round; >1 stretches along `angle`. */
+  stretch?: number;
+  angle?: number;
+}
+
 /**
  * A prototype mechanic. The shared harness owns the run lifecycle, scoring,
- * telemetry, restart, difficulty ramp and HUD; each mechanic owns only its
- * world, physics, collision and graybox rendering.
+ * telemetry, restart, difficulty ramp, HUD, backdrop, and the comet's trail +
+ * glow; each mechanic owns only its world, physics, collision and the world
+ * rendering (obstacles/pickups). The comet itself is drawn by the harness at
+ * `cometView`.
  */
 export interface Mechanic {
   readonly cfg: ProtoConfig;
@@ -64,6 +75,8 @@ export interface Mechanic {
   onRelease(holdMs: number, ctx: AppContext): void;
   /** Fixed-step logic update. */
   update(dt: number, ramp: RampState, ctx: AppContext): StepResult;
-  /** Draw the graybox world (HUD is drawn by the harness on top). */
+  /** Draw the world (obstacles + pickups) over the backdrop. */
   render(alpha: number, ctx: AppContext): void;
+  /** Interpolated comet position for the harness to draw the trail + body. */
+  cometView(ctx: AppContext, alpha: number): CometView;
 }

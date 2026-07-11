@@ -1,7 +1,8 @@
 import type { AppContext } from '../../engine/types';
 import type { Rng } from '../../engine/rng';
 import { PALETTE } from '../../ui/palette';
-import type { Mechanic, RampState, StepResult } from '../shared/mechanic';
+import { glowPickup, glowRect } from '../../ui/shapes';
+import type { CometView, Mechanic, RampState, StepResult } from '../shared/mechanic';
 import { circleRectGap, clamp } from '../shared/math';
 import { FLIP, FLIP_CONFIG } from './config';
 
@@ -126,42 +127,41 @@ export class FlipMechanic implements Mechanic {
     return { advanced: ramp.speed * dt, pickups, nearMisses, dead };
   }
 
-  render(alpha: number, ctx: AppContext): void {
+  render(_alpha: number, ctx: AppContext): void {
     const { ctx: c, width: w, height: h } = ctx;
-    c.fillStyle = PALETTE.bg;
-    c.fillRect(0, 0, w, h);
 
-    // lane bands
-    c.fillStyle = 'rgba(123,131,166,0.18)';
+    // lane bands (surfaces the comet clings to)
+    const band = c.createLinearGradient(0, 0, 0, FLIP.laneMargin);
+    band.addColorStop(0, 'rgba(77,225,193,0.16)');
+    band.addColorStop(1, 'rgba(77,225,193,0)');
+    c.fillStyle = band;
     c.fillRect(0, 0, w, FLIP.laneMargin);
+    const band2 = c.createLinearGradient(0, h - FLIP.laneMargin, 0, h);
+    band2.addColorStop(0, 'rgba(77,225,193,0)');
+    band2.addColorStop(1, 'rgba(77,225,193,0.16)');
+    c.fillStyle = band2;
     c.fillRect(0, h - FLIP.laneMargin, w, FLIP.laneMargin);
 
-    // obstacles
-    c.fillStyle = PALETTE.accentAlt;
     for (const o of this.obstacles) {
       const sx = o.worldX - this.cameraX;
       if (sx > w + 20 || sx + FLIP.obstacleW < -20) continue;
       const ry = o.surface === 'floor' ? h - FLIP.laneMargin - o.h : FLIP.laneMargin;
-      c.fillRect(sx, ry, FLIP.obstacleW, o.h);
+      glowRect(c, sx, ry, FLIP.obstacleW, o.h, PALETTE.accentAlt);
     }
 
-    // pickups
-    c.fillStyle = PALETTE.fg;
     for (const p of this.pickups) {
       if (p.taken) continue;
       const sx = p.worldX - this.cameraX;
       if (sx < -20 || sx > w + 20) continue;
-      c.beginPath();
-      c.arc(sx, p.y, FLIP.pickupR, 0, Math.PI * 2);
-      c.fill();
+      glowPickup(c, sx, p.y, FLIP.pickupR, PALETTE.accent, this.cameraX * 0.02 + sx * 0.05);
     }
+  }
 
-    // comet (interpolated)
+  cometView(ctx: AppContext, alpha: number): CometView {
     const drawY = this.prevY + (this.y - this.prevY) * alpha;
-    c.fillStyle = PALETTE.accent;
-    c.beginPath();
-    c.arc(w * FLIP.cometX, drawY, FLIP.cometR, 0, Math.PI * 2);
-    c.fill();
+    // squash toward the direction of travel
+    const stretch = clamp(1 + Math.abs(this.vy) / 2200, 1, 1.5);
+    return { x: ctx.width * FLIP.cometX, y: drawY, stretch, angle: Math.PI / 2 };
   }
 
   private floorY(ctx: AppContext): number {

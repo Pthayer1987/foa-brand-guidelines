@@ -2,6 +2,8 @@ import type { Scene, AppContext } from '../../engine/types';
 import type { InputEvent } from '../../engine/input';
 import { Rng } from '../../engine/rng';
 import { PALETTE } from '../../ui/palette';
+import { Backdrop } from '../../ui/backdrop';
+import { CometTrail, drawComet } from '../../ui/comet';
 import { dailyRng } from '../dailySeed';
 import { runState } from '../runState';
 
@@ -22,6 +24,8 @@ export class GameScene implements Scene {
   private prevX = 0.5;
   private prevY = 0.5;
   private ripple = 0;
+  private readonly backdrop = new Backdrop();
+  private readonly trail = new CometTrail(14);
 
   enter(): void {
     // Seeded so the sequence of jumps is identical across reloads (same day).
@@ -30,6 +34,7 @@ export class GameScene implements Scene {
     this.markerX = this.prevX = 0.5;
     this.markerY = this.prevY = 0.5;
     this.ripple = 0;
+    this.trail.reset();
   }
 
   handleInput(events: readonly InputEvent[], ctx: AppContext): void {
@@ -53,33 +58,33 @@ export class GameScene implements Scene {
   }
 
   update(dt: number): void {
+    this.backdrop.update(dt);
     if (this.ripple > 0) this.ripple = Math.max(0, this.ripple - dt * 3);
   }
 
   render(alpha: number, ctx: AppContext): void {
     const { ctx: c, width: w, height: h, input } = ctx;
-    c.fillStyle = PALETTE.bg;
-    c.fillRect(0, 0, w, h);
+    this.backdrop.render(c, w, h);
 
     const x = (this.prevX + (this.markerX - this.prevX) * alpha) * w;
     const y = (this.prevY + (this.markerY - this.prevY) * alpha) * h;
+    this.trail.push(x, y);
 
     // ripple ring on tap
     if (this.ripple > 0) {
+      c.save();
       c.strokeStyle = PALETTE.accentAlt;
       c.globalAlpha = this.ripple;
       c.lineWidth = 3;
       c.beginPath();
       c.arc(x, y, 24 + (1 - this.ripple) * 60, 0, Math.PI * 2);
       c.stroke();
-      c.globalAlpha = 1;
+      c.restore();
     }
 
-    // marker
-    c.fillStyle = PALETTE.accent;
-    c.beginPath();
-    c.arc(x, y, 20, 0, Math.PI * 2);
-    c.fill();
+    // marker (glowing comet)
+    this.trail.render(c, 18);
+    drawComet(c, x, y, 18);
 
     // live hold bar (shows press/hold reading straight from the input layer)
     if (input.pressed) {

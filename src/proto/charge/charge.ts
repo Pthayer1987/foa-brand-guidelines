@@ -1,7 +1,8 @@
 import type { AppContext } from '../../engine/types';
 import type { Rng } from '../../engine/rng';
 import { PALETTE } from '../../ui/palette';
-import type { Mechanic, RampState, StepResult } from '../shared/mechanic';
+import { glowPickup, glowRect } from '../../ui/shapes';
+import type { CometView, Mechanic, RampState, StepResult } from '../shared/mechanic';
 import { circleRectGap, clamp } from '../shared/math';
 import { CHARGE, CHARGE_CONFIG } from './config';
 
@@ -119,50 +120,50 @@ export class ChargeMechanic implements Mechanic {
 
   render(alpha: number, ctx: AppContext): void {
     const { ctx: c, width: w, height: h } = ctx;
-    c.fillStyle = PALETTE.bg;
-    c.fillRect(0, 0, w, h);
 
-    // walls
-    c.fillStyle = PALETTE.accentAlt;
     for (const wall of this.walls) {
       const sx = wall.worldX - this.cameraX;
       if (sx > w + 20 || sx + CHARGE.wallW < -20) continue;
-      c.fillRect(sx, 0, CHARGE.wallW, wall.gapY);
+      glowRect(c, sx, 0, CHARGE.wallW, wall.gapY, PALETTE.accentAlt);
       const botY = wall.gapY + wall.gap;
-      c.fillRect(sx, botY, CHARGE.wallW, h - botY);
+      glowRect(c, sx, botY, CHARGE.wallW, h - botY, PALETTE.accentAlt);
     }
 
-    // pickups
-    c.fillStyle = PALETTE.fg;
     for (const p of this.pickups) {
       if (p.taken) continue;
       const sx = p.worldX - this.cameraX;
       if (sx < -20 || sx > w + 20) continue;
-      c.beginPath();
-      c.arc(sx, p.y, CHARGE.pickupR, 0, Math.PI * 2);
-      c.fill();
+      glowPickup(c, sx, p.y, CHARGE.pickupR, PALETTE.fg, this.cameraX * 0.02 + sx * 0.05);
     }
 
-    // comet
-    const drawY = this.prevY + (this.y - this.prevY) * alpha;
-    const cx = w * CHARGE.cometX;
-    c.fillStyle = PALETTE.accent;
-    c.beginPath();
-    c.arc(cx, drawY, CHARGE.cometR, 0, Math.PI * 2);
-    c.fill();
-
-    // charge meter
+    // charge meter above the comet
     if (this.charging) {
+      const drawY = this.prevY + (this.y - this.prevY) * alpha;
+      const cx = w * CHARGE.cometX;
       const charge = clamp(
         (performance.now() - this.chargeStartMs) / (CHARGE.chargeTimeMax * 1000),
         0,
         1,
       );
-      c.fillStyle = 'rgba(123,131,166,0.5)';
-      c.fillRect(cx - 26, drawY - 30, 52, 6);
+      c.save();
+      c.fillStyle = 'rgba(123,131,166,0.45)';
+      c.beginPath();
+      c.roundRect(cx - 28, drawY - 34, 56, 7, 3.5);
+      c.fill();
+      c.shadowColor = charge >= 1 ? PALETTE.accentAlt : PALETTE.accent;
+      c.shadowBlur = 12;
       c.fillStyle = charge >= 1 ? PALETTE.accentAlt : PALETTE.accent;
-      c.fillRect(cx - 26, drawY - 30, 52 * charge, 6);
+      c.beginPath();
+      c.roundRect(cx - 28, drawY - 34, 56 * charge, 7, 3.5);
+      c.fill();
+      c.restore();
     }
+  }
+
+  cometView(ctx: AppContext, alpha: number): CometView {
+    const drawY = this.prevY + (this.y - this.prevY) * alpha;
+    const stretch = clamp(1 + Math.abs(this.vy) / 1600, 1, 1.5);
+    return { x: ctx.width * CHARGE.cometX, y: drawY, stretch, angle: Math.PI / 2 };
   }
 
   private fill(ctx: AppContext, gap: number): void {
