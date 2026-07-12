@@ -6,6 +6,7 @@ import { GAME, VW, VH, medalFor, type MedalId } from './core/config';
 import { FlipSim } from './core/sim';
 import { GameRenderer } from './render/renderer';
 import { Bloom } from './render/bloom';
+import { PostFX } from './render/postfx';
 import { skinById, type Skin } from './core/skins';
 
 export interface RunConfig {
@@ -34,11 +35,16 @@ export interface PlayCallbacks {
 
 /** Drives a single run: engine loop + input + juice + sim + renderer. */
 export class PlayController {
-  private readonly ctx: CanvasRenderingContext2D;
+  private ctx!: CanvasRenderingContext2D; // draw target (offscreen when post is on)
   private readonly input: Input;
   private readonly renderer = new GameRenderer();
   private readonly bloom = new Bloom();
   private loop: GameLoop | null = null;
+
+  // WebGL post-processing; falls back to plain 2D when unavailable
+  private post: PostFX | null = null;
+  private usePost = false;
+  private sceneCanvas: HTMLCanvasElement | null = null;
 
   private sim!: FlipSim;
   private ghost: FlipSim | null = null;
@@ -53,10 +59,23 @@ export class PlayController {
     private readonly canvas: HTMLCanvasElement,
     private readonly juice: JuiceSystem,
   ) {
-    const c = canvas.getContext('2d', { alpha: false });
-    if (!c) throw new Error('PlayController: no 2D context');
-    this.ctx = c;
     this.input = new Input(canvas);
+
+    // Try the WebGL post pipeline on the visible canvas; render the 2D scene
+    // to an offscreen buffer that becomes the shader input.
+    const post = new PostFX();
+    if (post.init(canvas)) {
+      this.post = post;
+      this.usePost = true;
+      this.sceneCanvas = document.createElement('canvas');
+      const sc = this.sceneCanvas.getContext('2d', { alpha: false });
+      if (!sc) throw new Error('PlayController: no 2D context');
+      this.ctx = sc;
+    } else {
+      const c = canvas.getContext('2d', { alpha: false });
+      if (!c) throw new Error('PlayController: no 2D context');
+      this.ctx = c;
+    }
   }
 
   start(cfg: RunConfig, cb: PlayCallbacks): void {
@@ -172,6 +191,7 @@ export class PlayController {
   }
 
   private render(alpha: number): void {
+    // draw the 2D scene (to the offscreen buffer when post is on)
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.ctx.clearRect(0, 0, this.cssW, this.cssH);
 
@@ -184,10 +204,19 @@ export class PlayController {
     });
     this.juice.renderParticles(this.ctx);
     this.ctx.restore();
-
-    // bloom the whole frame, then the flash sits on top
-    if (!this.juice.reducedMotion) this.bloom.apply(this.ctx, this.canvas, 0.55, 5);
     this.juice.renderOverlays(this.ctx, this.cssW, this.cssH);
+
+    if (this.usePost && this.post && this.sceneCanvas) {
+      // GPU post: bright-pass → gaussian bloom → composite (CA + vignette + grain)
+      this.post.render(
+        this.sceneCanvas,
+        performance.now() / 1000,
+        this.juice.reducedMotion ? 0 : 1,
+      );
+    } else if (!this.juice.reducedMotion) {
+      // 2D fallback bloom
+      this.bloom.apply(this.ctx, this.canvas, 0.55, 5);
+    }
 
     this.cb.onFrame(this.sim);
   }
@@ -199,8 +228,15 @@ export class PlayController {
     this.cssW = rect.width || window.innerWidth;
     this.cssH = rect.height || window.innerHeight;
     this.dpr = Math.min(window.devicePixelRatio || 1, 3);
-    this.canvas.width = Math.round(this.cssW * this.dpr);
-    this.canvas.height = Math.round(this.cssH * this.dpr);
+    const dw = Math.round(this.cssW * this.dpr);
+    const dh = Math.round(this.cssH * this.dpr);
+    this.canvas.width = dw;
+    this.canvas.height = dh;
+    if (this.usePost && this.sceneCanvas && this.post) {
+      this.sceneCanvas.width = dw;
+      this.sceneCanvas.height = dh;
+      this.post.resize(dw, dh);
+    }
   }
 }
 

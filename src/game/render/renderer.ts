@@ -2,6 +2,7 @@ import { Backdrop } from '../../ui/backdrop';
 import { CometTrail, drawComet } from '../../ui/comet';
 import { GAME, VW, VH, CEIL_LINE, FLOOR_LINE } from '../core/config';
 import { clamp } from '../core/geom';
+import { Rng } from '../../engine/rng';
 import type { FlipSim } from '../core/sim';
 import type { Skin } from '../core/skins';
 import { DEFAULT_SKIN } from '../core/skins';
@@ -11,11 +12,29 @@ export interface RenderOptions {
   ghost?: FlipSim | null;
 }
 
+interface Dust {
+  x: number;
+  y: number;
+  r: number;
+  depth: number;
+}
+
 /** Maps the virtual playfield onto the canvas and draws the FLIP world. */
 export class GameRenderer {
   private readonly backdrop = new Backdrop();
   private trail = new CometTrail(22, DEFAULT_SKIN.trail);
   private ghostTrail = new CometTrail(16, 'rgba(255,255,255,0.6)');
+  private readonly dust: Dust[];
+
+  constructor() {
+    const rng = new Rng('comet-dust');
+    this.dust = Array.from({ length: 40 }, () => ({
+      x: rng.next() * VW * 3,
+      y: rng.range(CEIL_LINE, FLOOR_LINE),
+      r: rng.range(1.5, 4.5),
+      depth: rng.range(1.4, 2.4), // >1 → foreground parallax
+    }));
+  }
 
   reset(skin: Skin = DEFAULT_SKIN): void {
     this.trail = new CometTrail(22, skin.trail);
@@ -78,6 +97,13 @@ export class GameRenderer {
       }
     }
 
+    // foreground parallax dust
+    this.drawDust(ctx, cameraX);
+
+    // comet reflection on the nearest surface
+    const cyNow = sim.renderY(alpha);
+    this.reflection(ctx, cyNow, skin);
+
     // ghost comet (translucent)
     const ghost = opts.ghost;
     if (ghost) {
@@ -117,6 +143,46 @@ export class GameRenderer {
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, VW - 2, VH - 2);
     ctx.restore();
+  }
+
+  private drawDust(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const span = VW + 80;
+    for (const d of this.dust) {
+      let sx = (d.x - cameraX * d.depth) % span;
+      sx = ((sx % span) + span) % span;
+      sx -= 40;
+      const a = 0.06 + (d.depth - 1.4) * 0.05;
+      const g = ctx.createRadialGradient(sx, d.y, 0, sx, d.y, d.r * 3);
+      g.addColorStop(0, `rgba(200,230,255,${a})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(sx, d.y, d.r * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  private reflection(ctx: CanvasRenderingContext2D, cy: number, skin: Skin): void {
+    const draw = (ry: number, a: number): void => {
+      if (a <= 0.02) return;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(GAME.cometX, ry, 0, GAME.cometX, ry, GAME.cometR * 2.4);
+      g.addColorStop(0, this.rgba(skin.glow, a));
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(GAME.cometX, ry, GAME.cometR * 1.6, GAME.cometR * 2.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    };
+    // floor reflection (fades as the comet lifts away)
+    draw(2 * FLOOR_LINE - cy, 0.3 * clamp(1 - (FLOOR_LINE - cy) / 320, 0, 1));
+    // ceiling reflection
+    draw(2 * CEIL_LINE - cy, 0.3 * clamp(1 - (cy - CEIL_LINE) / 320, 0, 1));
   }
 
   private laneBands(ctx: CanvasRenderingContext2D, skin: Skin): void {

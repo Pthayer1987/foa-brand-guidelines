@@ -8,7 +8,15 @@ export interface CometStyle {
   angle?: number;
 }
 
-/** Draws a glowing comet body with a bright core and soft halo. */
+function rgbaOf(hex: string, a: number): string {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+/** Draws a glowing comet: wide corona, anamorphic lens streaks, bright core. */
 export function drawComet(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -23,29 +31,55 @@ export function drawComet(
 
   ctx.save();
   ctx.translate(x, y);
-  ctx.rotate(angle);
-  ctx.scale(stretch, 1 / stretch);
-
-  // soft halo
-  const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 2.6);
-  halo.addColorStop(0, glow);
-  halo.addColorStop(0.4, 'rgba(77,225,193,0.35)');
-  halo.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.globalCompositeOperation = 'lighter';
-  ctx.fillStyle = halo;
+
+  // wide soft corona (screen-aligned, not stretched)
+  const corona = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 4);
+  corona.addColorStop(0, rgbaOf(glow, 0.55));
+  corona.addColorStop(0.3, rgbaOf(glow, 0.22));
+  corona.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = corona;
   ctx.beginPath();
-  ctx.arc(0, 0, r * 2.6, 0, Math.PI * 2);
+  ctx.arc(0, 0, r * 4, 0, Math.PI * 2);
   ctx.fill();
 
-  // body
+  // anamorphic lens streaks (horizontal + vertical)
+  ctx.save();
+  const hstreak = ctx.createLinearGradient(-r * 7, 0, r * 7, 0);
+  hstreak.addColorStop(0, 'rgba(0,0,0,0)');
+  hstreak.addColorStop(0.5, rgbaOf(glow, 0.5));
+  hstreak.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = hstreak;
+  ctx.fillRect(-r * 7, -r * 0.09, r * 14, r * 0.18);
+  const vstreak = ctx.createLinearGradient(0, -r * 5, 0, r * 5);
+  vstreak.addColorStop(0, 'rgba(0,0,0,0)');
+  vstreak.addColorStop(0.5, rgbaOf(glow, 0.4));
+  vstreak.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = vstreak;
+  ctx.fillRect(-r * 0.07, -r * 5, r * 0.14, r * 10);
+  ctx.restore();
+
+  // body (stretched along travel)
+  ctx.rotate(angle);
+  ctx.scale(stretch, 1 / stretch);
   ctx.globalCompositeOperation = 'source-over';
-  const body = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.1, 0, 0, r);
+  const body = ctx.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.05, 0, 0, r);
   body.addColorStop(0, '#ffffff');
-  body.addColorStop(0.5, color);
-  body.addColorStop(1, '#1b9d86');
+  body.addColorStop(0.45, color);
+  body.addColorStop(1, '#137e6c');
   ctx.fillStyle = body;
   ctx.beginPath();
   ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // hot specular core
+  ctx.globalCompositeOperation = 'lighter';
+  const core = ctx.createRadialGradient(-r * 0.2, -r * 0.2, 0, -r * 0.2, -r * 0.2, r * 0.7);
+  core.addColorStop(0, 'rgba(255,255,255,0.95)');
+  core.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = core;
+  ctx.beginPath();
+  ctx.arc(-r * 0.15, -r * 0.15, r * 0.7, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
