@@ -5,9 +5,50 @@ Wordle's retention engine bolted onto a Flappy-Bird-style core loop.
 
 - **Practice mode:** unlimited runs on random seeds — the "one more try" loop.
 - **Daily mode:** every player on Earth gets the identical seeded run each day,
-  3 attempts, shareable emoji result card, streaks. _(Phase 5+)_
+  3 attempts, shareable emoji result card, streaks.
 
-## Status: Phase 1 — Three graybox prototypes ✅
+## Status: full game playable ✅
+
+The locked mechanic is **FLIP** — tap to flip gravity, thread glowing gates,
+skim spikes for near-miss combos. Run `npm install && npm run dev` and open the
+root URL on a phone or narrow window.
+
+**Controls:** tap / click / Space = flip gravity · `M` = mute.
+
+### What's built (local-only, offline-capable)
+
+- **Core loop** — deterministic FLIP sim in a virtual 600×1000 playfield (so
+  every device gets the identical daily run). Gates force surface commitment,
+  spikes force flip-aways, spacing is provably solvable (no unfair deaths).
+  Score = distance + pickups + near-miss **combo multiplier**; medals
+  (bronze→comet); instant tap-to-restart. `src/game/core/`
+- **Juice** — particles, screen shake, hitstop, WebAudio synth, near-miss
+  flash + rising combo pitch, death burst, glowing comet + trail + skin,
+  starfield backdrop. Honours `prefers-reduced-motion` + mute.
+- **Daily runs** — UTC-seeded shared layout, 3 attempts/day (best kept),
+  streaks with a 7-day **freeze**, countdown, per-day history sparkline.
+- **Ghost replay** — your best daily attempt replays as a translucent ghost on
+  attempts 2–3 (deterministic, desync-free; unit-tested).
+- **Share** — Wordle-style emoji card + a 1200×630 canvas image, Web Share API
+  with clipboard/download fallback, OG/Twitter meta. `src/game/share.ts`
+- **Meta** — 14 earn-only comet skins/trails via achievements + a weekly
+  random drop; stats page with lifetime totals, 28-day calendar, skin gallery.
+- **PWA** — installable (manifest + icons), **offline** via service worker
+  (verified), install prompt after the 3rd session, safe-area insets, portrait
+  lock notice, pause-on-hide.
+
+### Deferred (need paid/external infra)
+
+- **Phase 7** — global leaderboard + percentile (needs a backend; a clean
+  seam is left at score-submission time).
+- **Phase 10** — analytics + soft-launch (needs an analytics endpoint + domain).
+
+The `SHARE_URL` in `src/game/share.ts` and the OG tags should be pointed at the
+real domain at deploy time.
+
+---
+
+## Prototype bake-off archive — three graybox mechanics
 
 Three one-touch mechanics built on the shared engine for the Phase 2 fun-gate
 bake-off. Rectangles and circles only — no art, no juice, no menus.

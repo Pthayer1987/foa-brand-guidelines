@@ -56,7 +56,7 @@ export class CometTrail {
   private pts: { x: number; y: number }[] = [];
   constructor(
     private readonly max = 16,
-    private readonly color = PALETTE.accent,
+    private readonly color: string = PALETTE.accent,
   ) {}
 
   reset(): void {
