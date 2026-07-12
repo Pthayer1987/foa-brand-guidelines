@@ -5,6 +5,7 @@ import { PALETTE } from '../ui/palette';
 import { GAME, VW, VH, medalFor, type MedalId } from './core/config';
 import { FlipSim } from './core/sim';
 import { GameRenderer } from './render/renderer';
+import { Bloom } from './render/bloom';
 import { skinById, type Skin } from './core/skins';
 
 export interface RunConfig {
@@ -36,6 +37,7 @@ export class PlayController {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly input: Input;
   private readonly renderer = new GameRenderer();
+  private readonly bloom = new Bloom();
   private loop: GameLoop | null = null;
 
   private sim!: FlipSim;
@@ -182,6 +184,9 @@ export class PlayController {
     });
     this.juice.renderParticles(this.ctx);
     this.ctx.restore();
+
+    // bloom the whole frame, then the flash sits on top
+    if (!this.juice.reducedMotion) this.bloom.apply(this.ctx, this.canvas, 0.55, 5);
     this.juice.renderOverlays(this.ctx, this.cssW, this.cssH);
 
     this.cb.onFrame(this.sim);

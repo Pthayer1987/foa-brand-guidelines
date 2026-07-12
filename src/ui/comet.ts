@@ -72,14 +72,34 @@ export class CometTrail {
     if (this.pts.length < 2) return;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
+    // soft glowing dots, tapering from tail to head
     for (let i = 0; i < this.pts.length; i++) {
       const p = this.pts[i] as { x: number; y: number };
       const f = i / this.pts.length; // 0 oldest → 1 newest
-      ctx.globalAlpha = f * 0.5;
-      ctx.fillStyle = this.color;
+      const rad = r * (0.25 + f * 1.1);
+      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad);
+      grad.addColorStop(0, this.color);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = f * f * 0.6;
+      ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, r * (0.2 + f * 0.7), 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
       ctx.fill();
+    }
+    // bright core streak — segmented so it fades toward the tail
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (let i = 1; i < this.pts.length; i++) {
+      const a = this.pts[i - 1] as { x: number; y: number };
+      const b = this.pts[i] as { x: number; y: number };
+      const f = i / this.pts.length;
+      ctx.globalAlpha = f * f * 0.55;
+      ctx.lineWidth = Math.max(0.6, r * 0.14 * f);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
     }
     ctx.restore();
   }

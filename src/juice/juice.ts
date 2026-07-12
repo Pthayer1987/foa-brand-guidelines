@@ -57,6 +57,7 @@ export class JuiceSystem implements Juice {
 
   private audio: AudioContext | null = null;
   private noiseBuffer: AudioBuffer | null = null;
+  private bus: GainNode | null = null;
   private muted = false;
 
   constructor() {
@@ -192,29 +193,15 @@ export class JuiceSystem implements Juice {
 
   tone(freq: number, opts: ToneOptions = {}): void {
     if (this.muted) return;
-    const ctx = this.ensureAudio();
-    if (!ctx) return;
-    const now = ctx.currentTime;
-    const dur = (opts.durationMs ?? 110) / 1000;
-    const vol = opts.volume ?? 0.14;
     // slight random detune keeps repeated hits from feeling robotic
     const f = freq * (1 + (Math.random() - 0.5) * 0.03);
-
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = opts.type ?? 'triangle';
-    osc.frequency.setValueAtTime(f, now);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(vol, now + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + dur + 0.02);
+    this.voice(f, f, opts.type ?? 'triangle', (opts.durationMs ?? 110) / 1000, opts.volume ?? 0.14);
   }
 
   // ---- richer named SFX ---------------------------------------------------
 
-  /** A single voice with an optional exponential pitch glide + ADSR-ish env. */
+  /** A single voice: oscillator with optional pitch glide, ADSR-ish env,
+   *  stereo pan, routed through the reverb/compressor bus. */
   private voice(
     f0: number,
     f1: number,
@@ -222,9 +209,11 @@ export class JuiceSystem implements Juice {
     dur: number,
     vol: number,
     when = 0,
+    pan = 0,
   ): void {
     const ctx = this.ensureAudio();
-    if (!ctx) return;
+    const bus = this.bus;
+    if (!ctx || !bus) return;
     const t = ctx.currentTime + when;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -234,15 +223,23 @@ export class JuiceSystem implements Juice {
     gain.gain.setValueAtTime(0.0001, t);
     gain.gain.exponentialRampToValueAtTime(vol, t + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    osc.connect(gain).connect(ctx.destination);
+    this.send(osc, gain, pan);
     osc.start(t);
-    osc.stop(t + dur + 0.03);
+    osc.stop(t + dur + 0.05);
   }
 
   /** Filtered white-noise burst — impacts and whooshes. */
-  private noise(dur: number, vol: number, f0: number, f1: number, type: BiquadFilterType): void {
+  private noise(
+    dur: number,
+    vol: number,
+    f0: number,
+    f1: number,
+    type: BiquadFilterType,
+    pan = 0,
+  ): void {
     const ctx = this.ensureAudio();
-    if (!ctx) return;
+    const bus = this.bus;
+    if (!ctx || !bus) return;
     if (!this.noiseBuffer) {
       const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
       const d = buf.getChannelData(0);
@@ -259,64 +256,87 @@ export class JuiceSystem implements Juice {
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(vol, t);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(filt).connect(gain).connect(ctx.destination);
+    src.connect(filt);
+    this.send(filt, gain, pan);
     src.start(t);
-    src.stop(t + dur + 0.03);
+    src.stop(t + dur + 0.05);
   }
 
-  /** Run start — a short rising sweep. */
+  /** Wire source → gain → (optional pan) → bus. */
+  private send(source: AudioNode, gain: GainNode, pan: number): void {
+    const ctx = this.audio;
+    const bus = this.bus;
+    if (!ctx || !bus) return;
+    source.connect(gain);
+    if (pan !== 0 && ctx.createStereoPanner) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, pan));
+      gain.connect(p).connect(bus);
+    } else {
+      gain.connect(bus);
+    }
+  }
+
+  /** Run start — layered rising sweep with a soft air swell. */
   sfxStart(): void {
     if (this.muted) return;
-    this.voice(180, 500, 'sine', 0.2, 0.09);
+    this.voice(160, 480, 'sine', 0.24, 0.08);
+    this.voice(240, 720, 'triangle', 0.22, 0.05, 0.02);
+    this.noise(0.24, 0.03, 300, 3000, 'bandpass');
   }
 
-  /** Gravity flip — a snappy "fwip": pitch blip + airy noise tick. */
+  /** Gravity flip — a snappy "fwip": detuned blip + airy noise tick. */
   sfxFlip(up = true): void {
     if (this.muted) return;
-    this.voice(up ? 240 : 460, up ? 520 : 240, 'triangle', 0.09, 0.09);
-    this.noise(0.05, 0.05, 2600, 500, 'bandpass');
+    const a = up ? 250 : 470;
+    const b = up ? 540 : 230;
+    const pan = up ? -0.15 : 0.15;
+    this.voice(a, b, 'triangle', 0.09, 0.08, 0, pan);
+    this.voice(a * 1.5, b * 1.5, 'sine', 0.07, 0.03, 0, pan);
+    this.noise(0.05, 0.04, 3000, 600, 'bandpass', pan);
   }
 
-  /** Near miss — climbs a pentatonic scale by combo, with a shimmer octave. */
+  /** Near miss — climbs a pentatonic scale by combo, bell-like with a fifth. */
   sfxNear(combo: number): void {
     if (this.muted) return;
     const scale = [0, 3, 5, 7, 10];
     const idx = Math.max(0, combo - 1);
     const semi = (scale[idx % scale.length] as number) + 12 * Math.floor(idx / scale.length);
     const f = 523 * Math.pow(2, semi / 12);
-    this.voice(f, f, 'sine', 0.16, 0.13);
-    this.voice(f * 2.01, f * 2.01, 'sine', 0.1, 0.05, 0.005);
+    const pan = (Math.random() - 0.5) * 0.5;
+    this.voice(f, f, 'sine', 0.18, 0.12, 0, pan);
+    this.voice(f * 1.5, f * 1.5, 'sine', 0.14, 0.05, 0.01, pan); // a fifth above
+    this.voice(f * 2.01, f * 2.01, 'triangle', 0.1, 0.04, 0.005, pan); // shimmer octave
   }
 
-  /** Pickup — bright two-note sparkle up. */
+  /** Pickup — bright three-note sparkle arpeggio + a tiny sparkle hiss. */
   sfxPickup(): void {
     if (this.muted) return;
-    this.voice(760, 760, 'triangle', 0.07, 0.11);
-    this.voice(1140, 1140, 'triangle', 0.09, 0.08, 0.05);
+    this.voice(720, 720, 'triangle', 0.07, 0.1, 0);
+    this.voice(1080, 1080, 'triangle', 0.08, 0.08, 0.045);
+    this.voice(1440, 1440, 'sine', 0.1, 0.06, 0.09);
+    this.noise(0.08, 0.02, 5000, 8000, 'highpass');
   }
 
-  /** Crash — low saw drop + a filtered noise thud. */
+  /** Crash — layered saw drop + sub boom + filtered noise thud. */
   sfxDeath(): void {
     if (this.muted) return;
-    this.voice(320, 60, 'sawtooth', 0.36, 0.17);
-    this.voice(180, 48, 'sine', 0.4, 0.12);
-    this.noise(0.34, 0.14, 1400, 110, 'lowpass');
+    this.voice(320, 55, 'sawtooth', 0.4, 0.16, 0, -0.1);
+    this.voice(190, 42, 'sine', 0.5, 0.14, 0, 0.1); // sub boom
+    this.voice(130, 30, 'triangle', 0.45, 0.08, 0.02);
+    this.noise(0.38, 0.16, 1600, 90, 'lowpass');
   }
 
-  /** New best — a rising major arpeggio fanfare. */
+  /** New best — a two-layer rising major arpeggio fanfare. */
   sfxBest(): void {
     if (this.muted) return;
     const base = 523;
-    [0, 4, 7, 12].forEach((s, i) =>
-      this.voice(
-        base * Math.pow(2, s / 12),
-        base * Math.pow(2, s / 12),
-        'triangle',
-        0.18,
-        0.12,
-        i * 0.1,
-      ),
-    );
+    [0, 4, 7, 12].forEach((s, i) => {
+      const f = base * Math.pow(2, s / 12);
+      const pan = (i - 1.5) * 0.25;
+      this.voice(f, f, 'triangle', 0.22, 0.11, i * 0.11, pan);
+      this.voice(f * 2, f * 2, 'sine', 0.18, 0.045, i * 0.11 + 0.01, pan);
+    });
   }
 
   private ensureAudio(): AudioContext | null {
@@ -329,11 +349,55 @@ export class JuiceSystem implements Juice {
         window.AudioContext ??
         (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return null;
-      this.audio = new Ctor();
-      return this.audio;
+      const ctx = new Ctor();
+      this.buildChain(ctx);
+      this.audio = ctx;
+      return ctx;
     } catch {
       return null;
     }
+  }
+
+  /** Master chain: bus → (dry + convolver reverb) → soft compressor → out. */
+  private buildChain(ctx: AudioContext): void {
+    const master = ctx.createGain();
+    master.gain.value = 0.85;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -18;
+    comp.ratio.value = 3;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.25;
+    master.connect(comp).connect(ctx.destination);
+
+    const bus = ctx.createGain();
+    bus.connect(master); // dry path
+
+    // convolver reverb for space/depth
+    try {
+      const convolver = ctx.createConvolver();
+      convolver.buffer = this.makeImpulse(ctx, 1.8, 2.6);
+      const wet = ctx.createGain();
+      wet.gain.value = 0.22;
+      bus.connect(convolver).connect(wet).connect(master);
+    } catch {
+      /* reverb optional */
+    }
+
+    this.bus = bus;
+  }
+
+  /** Procedural impulse response: exponentially-decaying stereo noise. */
+  private makeImpulse(ctx: AudioContext, seconds: number, decay: number): AudioBuffer {
+    const rate = ctx.sampleRate;
+    const len = Math.floor(rate * seconds);
+    const buf = ctx.createBuffer(2, len, rate);
+    for (let ch = 0; ch < 2; ch++) {
+      const data = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+      }
+    }
+    return buf;
   }
 }
 

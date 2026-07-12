@@ -1,6 +1,5 @@
 import { Backdrop } from '../../ui/backdrop';
 import { CometTrail, drawComet } from '../../ui/comet';
-import { PALETTE } from '../../ui/palette';
 import { GAME, VW, VH, CEIL_LINE, FLOOR_LINE } from '../core/config';
 import { clamp } from '../core/geom';
 import type { FlipSim } from '../core/sim';
@@ -68,11 +67,11 @@ export class GameRenderer {
       const sx = o.x - cameraX;
       if (sx > VW + 40 || sx + GAME.wallW < -40) continue;
       if (o.kind === 'gate') {
-        this.solid(ctx, sx, 0, GAME.wallW, o.gapTop);
-        this.solid(ctx, sx, o.gapBottom, GAME.wallW, VH - o.gapBottom);
+        this.solid(ctx, sx, 0, GAME.wallW, o.gapTop, sim.elapsed);
+        this.solid(ctx, sx, o.gapBottom, GAME.wallW, VH - o.gapBottom, sim.elapsed);
       } else {
         const ry = o.surface === 'floor' ? FLOOR_LINE - o.height : CEIL_LINE;
-        this.solid(ctx, sx, ry, GAME.wallW, o.height);
+        this.solid(ctx, sx, ry, GAME.wallW, o.height, sim.elapsed);
       }
       if (o.pickup && !o.pickup.taken) {
         this.pickup(ctx, o.pickup.x - cameraX, o.pickup.y, sim.elapsed);
@@ -103,6 +102,16 @@ export class GameRenderer {
       angle: Math.PI / 2,
     });
 
+    // combo vignette — the field glows hotter as your combo climbs
+    if (sim.combo > 0) {
+      const inten = Math.min(1, sim.combo / 6);
+      const vg = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.28, VW / 2, VH / 2, VH * 0.75);
+      vg.addColorStop(0, 'rgba(0,0,0,0)');
+      vg.addColorStop(1, this.rgba(skin.glow, 0.08 + 0.2 * inten));
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, VW, VH);
+    }
+
     // subtle inner frame
     ctx.strokeStyle = 'rgba(123,131,166,0.12)';
     ctx.lineWidth = 2;
@@ -132,19 +141,61 @@ export class GameRenderer {
     ctx.stroke();
   }
 
-  private solid(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
+  private solid(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    t: number,
+  ): void {
     if (h <= 0) return;
+    const r = Math.min(12, w / 2, h / 2);
+
+    // body with neon glow
     ctx.save();
-    ctx.shadowColor = PALETTE.accentAlt;
-    ctx.shadowBlur = 18;
-    const r = Math.min(10, w / 2, h / 2);
+    ctx.shadowColor = '#ff4f6a';
+    ctx.shadowBlur = 22;
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, r);
     const g = ctx.createLinearGradient(x, 0, x + w, 0);
-    g.addColorStop(0, '#ff5f79');
-    g.addColorStop(1, '#ff8fa2');
+    g.addColorStop(0, '#c4304a');
+    g.addColorStop(0.5, '#ff7488');
+    g.addColorStop(1, '#c4304a');
     ctx.fillStyle = g;
     ctx.fill();
+
+    // inner detailing, clipped to the bar
+    ctx.shadowBlur = 0;
+    ctx.clip();
+    const v = ctx.createLinearGradient(0, y, 0, y + h);
+    v.addColorStop(0, 'rgba(255,255,255,0.18)');
+    v.addColorStop(0.12, 'rgba(255,255,255,0)');
+    v.addColorStop(0.9, 'rgba(0,0,0,0)');
+    v.addColorStop(1, 'rgba(0,0,0,0.28)');
+    ctx.fillStyle = v;
+    ctx.fillRect(x, y, w, h);
+
+    // scrolling energy band
+    const bandH = 46;
+    const off = (t * 120 + x * 1.7) % (h + bandH);
+    const by = y - bandH + off;
+    const band = ctx.createLinearGradient(0, by, 0, by + bandH);
+    band.addColorStop(0, 'rgba(255,255,255,0)');
+    band.addColorStop(0.5, 'rgba(255,224,232,0.3)');
+    band.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = band;
+    ctx.fillRect(x, by, w, bandH);
+    ctx.restore();
+
+    // bright edge
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x + 0.75, y + 0.75, w - 1.5, h - 1.5, r);
+    ctx.strokeStyle = 'rgba(255,185,200,0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -153,20 +204,45 @@ export class GameRenderer {
     const rr = GAME.pickupR * pulse;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    const g = ctx.createRadialGradient(x, y, 0, x, y, rr * 2.2);
-    g.addColorStop(0, '#fff6c8');
-    g.addColorStop(0.4, 'rgba(255,212,90,0.5)');
+    // halo
+    const g = ctx.createRadialGradient(x, y, 0, x, y, rr * 2.6);
+    g.addColorStop(0, '#fff7d2');
+    g.addColorStop(0.35, 'rgba(255,212,90,0.55)');
     g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.arc(x, y, rr * 2.2, 0, Math.PI * 2);
+    ctx.arc(x, y, rr * 2.6, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalCompositeOperation = 'source-over';
+    // rotating sparkle
+    ctx.translate(x, y);
+    ctx.rotate(t * 1.6);
+    ctx.fillStyle = '#fff';
+    this.spark(ctx, rr * 2, rr * 0.5);
+    ctx.rotate(Math.PI / 4);
+    this.spark(ctx, rr * 1.2, rr * 0.32);
+    ctx.restore();
+    // core
+    ctx.save();
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.arc(x, y, rr * 0.55, 0, Math.PI * 2);
+    ctx.arc(x, y, rr * 0.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+  }
+
+  private spark(ctx: CanvasRenderingContext2D, long: number, short: number): void {
+    ctx.beginPath();
+    ctx.moveTo(0, -long);
+    ctx.lineTo(short, 0);
+    ctx.lineTo(0, long);
+    ctx.lineTo(-short, 0);
+    ctx.closePath();
+    ctx.moveTo(-long, 0);
+    ctx.lineTo(0, short);
+    ctx.lineTo(long, 0);
+    ctx.lineTo(0, -short);
+    ctx.closePath();
+    ctx.fill();
   }
 
   private rgba(hex: string, a: number): string {
