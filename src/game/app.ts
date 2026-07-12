@@ -109,6 +109,7 @@ export class GameApp {
     const skin = skinById(this.store.equippedSkin);
     this.show('game');
     this.play.resize();
+    this.juice.sfxStart();
     this.ui.tapHint.classList.add('show');
     this.updateHud(0, 1, opts.mode, opts.date);
 
@@ -162,6 +163,10 @@ export class GameApp {
     if (outcome.weeklyDrop) {
       toast(`✨ Weekly drop: ${skinById(outcome.weeklyDrop).name}!`);
     }
+
+    const isNewBest =
+      r.mode === 'daily' ? outcome.isDailyBest : r.score > this.preRunBest && r.score > 0;
+    if (isNewBest) this.juice.sfxBest();
 
     this.renderResults(r, outcome.isDailyBest);
     this.show('results');

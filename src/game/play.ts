@@ -106,7 +106,7 @@ export class PlayController {
       if (e.type !== 'press') continue;
       if (this.ended) continue;
       this.sim.flip();
-      this.juice.tone(300, { durationMs: 45, volume: 0.07, type: 'square' });
+      this.juice.sfxFlip(this.sim.gravitySign === -1);
     }
 
     if (this.juice.frozen) return;
@@ -130,13 +130,13 @@ export class PlayController {
     const cy = this.sim.y;
     if (ev.pickup > 0) {
       this.juice.burst(cx, cy, { count: 16, color: '#ffe07a', speed: 170 });
-      this.juice.tone(900 + this.sim.multiplier * 40, { durationMs: 90 });
+      this.juice.sfxPickup();
     }
     if (ev.nearMiss > 0) {
       this.juice.flash(this.cfg.skin.glow, 0.14);
       this.juice.shake(0.14);
       this.juice.burst(cx, cy, { count: 8, color: this.cfg.skin.trail, speed: 130 });
-      this.juice.tone(540 + this.sim.combo * 48, { durationMs: 75, type: 'sine' });
+      this.juice.sfxNear(this.sim.combo);
     }
     if (ev.died) {
       this.juice.hitstop(80);
@@ -144,7 +144,7 @@ export class PlayController {
       this.juice.flash(PALETTE.accentAlt, 0.42);
       this.juice.burst(cx, cy, { count: 44, color: PALETTE.accentAlt, speed: 340, life: 0.85 });
       this.juice.burst(cx, cy, { count: 22, color: this.cfg.skin.body, speed: 190 });
-      this.juice.tone(150, { durationMs: 260, type: 'sawtooth', volume: 0.16 });
+      this.juice.sfxDeath();
     }
   }
 

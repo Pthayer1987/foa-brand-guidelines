@@ -56,6 +56,7 @@ export class JuiceSystem implements Juice {
   private flashAlpha = 0;
 
   private audio: AudioContext | null = null;
+  private noiseBuffer: AudioBuffer | null = null;
   private muted = false;
 
   constructor() {
@@ -209,6 +210,113 @@ export class JuiceSystem implements Juice {
     osc.connect(gain).connect(ctx.destination);
     osc.start(now);
     osc.stop(now + dur + 0.02);
+  }
+
+  // ---- richer named SFX ---------------------------------------------------
+
+  /** A single voice with an optional exponential pitch glide + ADSR-ish env. */
+  private voice(
+    f0: number,
+    f1: number,
+    type: OscillatorType,
+    dur: number,
+    vol: number,
+    when = 0,
+  ): void {
+    const ctx = this.ensureAudio();
+    if (!ctx) return;
+    const t = ctx.currentTime + when;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(Math.max(1, f0), t);
+    if (f1 !== f0) osc.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + dur + 0.03);
+  }
+
+  /** Filtered white-noise burst — impacts and whooshes. */
+  private noise(dur: number, vol: number, f0: number, f1: number, type: BiquadFilterType): void {
+    const ctx = this.ensureAudio();
+    if (!ctx) return;
+    if (!this.noiseBuffer) {
+      const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      this.noiseBuffer = buf;
+    }
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const filt = ctx.createBiquadFilter();
+    filt.type = type;
+    filt.frequency.setValueAtTime(f0, t);
+    filt.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(vol, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(filt).connect(gain).connect(ctx.destination);
+    src.start(t);
+    src.stop(t + dur + 0.03);
+  }
+
+  /** Run start — a short rising sweep. */
+  sfxStart(): void {
+    if (this.muted) return;
+    this.voice(180, 500, 'sine', 0.2, 0.09);
+  }
+
+  /** Gravity flip — a snappy "fwip": pitch blip + airy noise tick. */
+  sfxFlip(up = true): void {
+    if (this.muted) return;
+    this.voice(up ? 240 : 460, up ? 520 : 240, 'triangle', 0.09, 0.09);
+    this.noise(0.05, 0.05, 2600, 500, 'bandpass');
+  }
+
+  /** Near miss — climbs a pentatonic scale by combo, with a shimmer octave. */
+  sfxNear(combo: number): void {
+    if (this.muted) return;
+    const scale = [0, 3, 5, 7, 10];
+    const idx = Math.max(0, combo - 1);
+    const semi = (scale[idx % scale.length] as number) + 12 * Math.floor(idx / scale.length);
+    const f = 523 * Math.pow(2, semi / 12);
+    this.voice(f, f, 'sine', 0.16, 0.13);
+    this.voice(f * 2.01, f * 2.01, 'sine', 0.1, 0.05, 0.005);
+  }
+
+  /** Pickup — bright two-note sparkle up. */
+  sfxPickup(): void {
+    if (this.muted) return;
+    this.voice(760, 760, 'triangle', 0.07, 0.11);
+    this.voice(1140, 1140, 'triangle', 0.09, 0.08, 0.05);
+  }
+
+  /** Crash — low saw drop + a filtered noise thud. */
+  sfxDeath(): void {
+    if (this.muted) return;
+    this.voice(320, 60, 'sawtooth', 0.36, 0.17);
+    this.voice(180, 48, 'sine', 0.4, 0.12);
+    this.noise(0.34, 0.14, 1400, 110, 'lowpass');
+  }
+
+  /** New best — a rising major arpeggio fanfare. */
+  sfxBest(): void {
+    if (this.muted) return;
+    const base = 523;
+    [0, 4, 7, 12].forEach((s, i) =>
+      this.voice(
+        base * Math.pow(2, s / 12),
+        base * Math.pow(2, s / 12),
+        'triangle',
+        0.18,
+        0.12,
+        i * 0.1,
+      ),
+    );
   }
 
   private ensureAudio(): AudioContext | null {
